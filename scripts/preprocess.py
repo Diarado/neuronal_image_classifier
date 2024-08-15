@@ -1,36 +1,45 @@
-from skimage import io, color
+from skimage import io, color, filters, morphology
+from skimage.measure import label, regionprops
 from skimage.filters import threshold_otsu
-import numpy as np
 from skimage.transform import resize
 
 def preprocess_image(image_path, target_size=(512, 512)):
     image = io.imread(image_path)
     
-    # Check if the image has more than one channel
+    # Convert to grayscale if needed
     if len(image.shape) == 3 and image.shape[2] == 3:
         gray_image = color.rgb2gray(image)
     else:
-        gray_image = image  # The image is already grayscale
+        gray_image = image
     
-    # Resize the image to the target size
+    # Resize image
     resized_image = resize(gray_image, target_size, anti_aliasing=True)
     
-    # Binarization using Otsu's thresholding
+    # Apply Otsu's thresholding
     thresh = threshold_otsu(resized_image)
     binary_image = resized_image > thresh
     
-    return binary_image
-
-def extract_features(image):
-    # Extract features from the preprocessed image (e.g., density, contamination, peeling)
-    # Here we'll use simple statistics as an example
-    features = {
-        'mean_intensity': np.mean(image),
-        'std_intensity': np.std(image),
-        'area': np.sum(image > 0)  # Count of non-zero pixels
-    }
+    # Calculate intensity threshold for contamination
+    contamination_thresh = filters.threshold_otsu(resized_image)
     
-    return features
+    # Label regions
+    labeled_image = label(binary_image)
+    regions = regionprops(labeled_image, intensity_image=resized_image)
+    
+    # Analyzing regions
+    for region in regions:
+        # High-intensity regions could be peeling
+        if region.mean_intensity > contamination_thresh * 1.5 and region.area > 100:
+            # Mark as peeling
+            binary_image[region.coords[:, 0], region.coords[:, 1]] = 2  # Example label for peeling
+        elif region.mean_intensity > contamination_thresh:
+            # Mark as normal neuron cells
+            binary_image[region.coords[:, 0], region.coords[:, 1]] = 1  # Example label for normal cells
+        else:
+            # Mark as contamination
+            binary_image[region.coords[:, 0], region.coords[:, 1]] = 0  # Example label for contamination
+
+    return binary_image
 
 
 

@@ -8,7 +8,7 @@ def preprocess_and_flatten(image_path):
     return binary_image.flatten()
 
 def test_model(image_dir, model_path='models/classifier_model.pkl', output_csv='predictions.csv'):
-    print('enter')
+
     model = load(model_path)
     image_dir = os.path.join(image_dir, 'images')
     # List all files in the images directory for debugging
@@ -18,11 +18,9 @@ def test_model(image_dir, model_path='models/classifier_model.pkl', output_csv='
     results = []
     
     for image_path in image_paths:
-        print(f"Found image: {image_path}")  # Add this
 
         processed_image = preprocess_and_flatten(image_path)
         prediction = model.predict([processed_image])
-        print(f"Processing {image_path}: Prediction = {prediction}")  # Debug statement
         results.append((os.path.basename(image_path), prediction[0]))
     
     if results:
