@@ -19,5 +19,5 @@ def train_and_save_model(X, y, output_file):
 
 if __name__ == "__main__":
     csv_dict = parse_csv_to_dict('train/scoring_round06.csv')
-    X, y = link_images_to_scores('train/round_06images', csv_dict)
+    X, y = link_images_to_scores('train/round06_images', csv_dict)
     train_and_save_model(X, y, 'models/classifier_model.pkl')
