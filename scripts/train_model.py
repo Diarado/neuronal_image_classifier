@@ -19,8 +19,17 @@ def train_in_batches(X, y, batch_size=100):
     return model
 
 if __name__ == "__main__":
-    csv_dict = parse_csv_to_dict('train/scoring_round06.csv')
-    X, y = link_images_to_scores('train/round06_images', csv_dict)
+    image_dir_lst = ['train/round06_images', 'train/round09_images']
+    csv_lst = ['train/scoring_round06.csv', 'train/scoring_round09.csv']
+    
+    X, y = [], []
+    
+    for image_dir, csv_file in zip(image_dir_lst, csv_lst):
+        csv_dict = parse_csv_to_dict(csv_file)
+        X_part, y_part = link_images_to_scores(image_dir, csv_dict)
+        X.extend(X_part)
+        y.extend(y_part)
+    
     model = train_in_batches(X, y)  # Use batch training
     
     # Ensure the models directory exists
