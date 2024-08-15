@@ -1,8 +1,9 @@
 from skimage import io, color
 from skimage.filters import threshold_otsu
 import numpy as np
+from skimage.transform import resize
 
-def preprocess_image(image_path):
+def preprocess_image(image_path, target_size=(512, 512)):
     image = io.imread(image_path)
     
     # Check if the image has more than one channel
@@ -11,9 +12,12 @@ def preprocess_image(image_path):
     else:
         gray_image = image  # The image is already grayscale
     
+    # Resize the image to the target size
+    resized_image = resize(gray_image, target_size, anti_aliasing=True)
+    
     # Binarization using Otsu's thresholding
-    thresh = threshold_otsu(gray_image)
-    binary_image = gray_image > thresh
+    thresh = threshold_otsu(resized_image)
+    binary_image = resized_image > thresh
     
     return binary_image
 
