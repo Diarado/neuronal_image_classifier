@@ -4,6 +4,7 @@ from skimage.filters import threshold_otsu
 from skimage.transform import resize
 
 def preprocess_image(image_path, target_size=(512, 512)):
+    # set the size
     image = io.imread(image_path)
     
     # Convert to grayscale if needed
