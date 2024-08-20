@@ -4,7 +4,7 @@ from scripts.preprocess import preprocess_image
 import pandas as pd
 
 def preprocess_and_flatten(image_path):
-    binary_image = preprocess_image(image_path)
+    binary_image, _ = preprocess_image(image_path)
     return binary_image.flatten()
 
 def test_model(image_dir, model_path='models/classifier_model.pkl', output_csv='predictions.csv'):

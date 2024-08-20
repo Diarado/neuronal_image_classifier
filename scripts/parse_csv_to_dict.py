@@ -29,9 +29,9 @@ def parse_csv_to_dict(csv_path):
                 else:
                     empty_dead = False
                     
-                peel_score = int(peeling) if peeling else 1
-                cont_score = int(contaminants) if contaminants else 1
-                den_score = int(cell_density) if cell_density else 1
+                peel_score = int(round(float(peeling))) if peeling else 1
+                cont_score = int(round(float(contaminants))) if contaminants else 1
+                den_score = int(round(float(cell_density))) if cell_density else 1
                 fields.append([peel_score, cont_score, den_score, empty_dead])
                 
             # Store the list of fields for the plate_info key
