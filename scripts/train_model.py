@@ -3,7 +3,9 @@ from joblib import dump
 from scripts.parse_csv_to_dict import parse_csv_to_dict
 from scripts.link_images_to_scores import link_images_to_scores
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
+from scripts.preprocess import preprocess_image
 import numpy as np
 import gc
 
@@ -23,18 +25,26 @@ def train_in_batches(X, y, batch_size=100):
     return model
 
 if __name__ == "__main__":
-    image_dir_lst = ['train/round06_images', 'train/round09_images', 'train/round11_images']
-    csv_lst = ['train/scoring_round06.csv', 'train/scoring_round09.csv', 'train/scoring_round11.csv']
-    # image_dir_lst = ['train/round06_images']
-    # csv_lst = ['train/scoring_round06.csv']
+    # image_dir_lst = ['train/round06_images', 'train/round09_images', 'train/round11_images']
+    # csv_lst = ['train/scoring_round06.csv', 'train/scoring_round09.csv', 'train/scoring_round11.csv']
+    image_dir_lst = ['train/round06_images']
+    csv_lst = ['train/scoring_round06.csv']
     
     X, y = [], []
     
     for image_dir, csv_file in zip(image_dir_lst, csv_lst):
         csv_dict = parse_csv_to_dict(csv_file)
         X_part, y_part = link_images_to_scores(image_dir, csv_dict)
-        X.extend(X_part)
-        y.extend(y_part)
+
+        X_filtered, y_filtered = [], []
+        for img, score in zip(X_part, y_part):
+            if score[3] != 1:  
+
+                X_filtered.append(img)
+                y_filtered.append(score)
+
+        X.extend(X_filtered)
+        y.extend(y_filtered)
         
         # Clear memory after each set of images
         del X_part, y_part
@@ -46,3 +56,4 @@ if __name__ == "__main__":
     os.makedirs('models', exist_ok=True)
     
     dump(model, 'models/classifier_model.pkl')
+

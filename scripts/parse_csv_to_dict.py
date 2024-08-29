@@ -24,10 +24,10 @@ def parse_csv_to_dict(csv_path):
 
                 peeling, contaminants, cell_density = field_scores[:3]
                 if field_scores[3]: # if there is some string in empty/dead, we make dead True
-                    empty_dead = True
+                    empty_dead = 1
 
                 else:
-                    empty_dead = False
+                    empty_dead = 0
                     
                 peel_score = int(round(float(peeling))) if peeling else 1
                 cont_score = int(round(float(contaminants))) if contaminants else 1
@@ -36,7 +36,5 @@ def parse_csv_to_dict(csv_path):
                 
             # Store the list of fields for the plate_info key
             data_dict[plate_info] = fields
-    # print(data_dict)
+    print(data_dict)
     return data_dict
-
-# parse_csv_to_dict('train/scoring_round06.csv')
