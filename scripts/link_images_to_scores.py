@@ -25,7 +25,7 @@ def link_images_to_scores(image_dir, csv_dict):
                     scores = csv_dict[plate_info][fld_num]
 
                     # Preprocess the image
-                    processed_image, _, _= preprocess_image(image_path)
+                    processed_image, _, _, _= preprocess_image(image_path)
 
                     
 

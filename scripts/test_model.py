@@ -5,8 +5,8 @@ import pandas as pd
 import numpy as np
 
 def preprocess_and_flatten(image_path):
-    binary_image, is_dead, density = preprocess_image(image_path)
-    return binary_image.flatten(), is_dead, density
+    binary_image, is_dead, peeling_degree, density = preprocess_image(image_path)
+    return binary_image.flatten(), is_dead, peeling_degree, density
 
 def test_model(image_dir, model_path='models/classifier_model.pkl', scaler_path='models/scaler.pkl', output_csv='predictions.csv'):
 
@@ -18,7 +18,7 @@ def test_model(image_dir, model_path='models/classifier_model.pkl', scaler_path=
     results = []
 
     for image_path in image_paths:
-        labeled_image, is_dead, cell_density = preprocess_and_flatten(image_path)
+        labeled_image, is_dead, peeling_degree, cell_density = preprocess_and_flatten(image_path)
         num_peeling_pixels = np.sum(labeled_image == 3)
         num_neuron_cells = np.sum(labeled_image == 2)
         
@@ -28,7 +28,8 @@ def test_model(image_dir, model_path='models/classifier_model.pkl', scaler_path=
 
         # Predict all four scores
         predictions = model.predict(feature_vector)[0]  # Expecting the model to return four scores
-        
+        if peeling_degree != 3:
+            predictions[0] = peeling_degree
         # Append all four predicted scores
         results.append((os.path.basename(image_path), predictions[0], predictions[1], predictions[2], is_dead))
     
