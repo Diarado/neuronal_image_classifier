@@ -13,12 +13,10 @@ def test_model(image_dir, model_path='models/classifier_model.pkl', scaler_path=
     model = load(model_path)
     scaler = load(scaler_path)
     image_dir = os.path.join(image_dir, 'images')
-    # List all files in the images directory for debugging
-    all_files = os.listdir(image_dir) 
-    # Gather all .tif files
+    all_files = os.listdir(image_dir)
     image_paths = [os.path.join(image_dir, file) for file in all_files if file.endswith('.tif')]
     results = []
-    
+
     for image_path in image_paths:
         labeled_image, is_dead, cell_density = preprocess_and_flatten(image_path)
         num_peeling_pixels = np.sum(labeled_image == 3)
@@ -28,11 +26,14 @@ def test_model(image_dir, model_path='models/classifier_model.pkl', scaler_path=
         feature_vector = [num_peeling_pixels, num_neuron_cells, cell_density]
         feature_vector = scaler.transform([feature_vector])  # Normalize the feature vector
 
-        prediction = model.predict(feature_vector)
-        results.append((os.path.basename(image_path), prediction[0], cell_density))
+        # Predict all four scores
+        predictions = model.predict(feature_vector)[0]  # Expecting the model to return four scores
+        
+        # Append all four predicted scores
+        results.append((os.path.basename(image_path), predictions[0], predictions[1], predictions[2], is_dead))
     
     if results:
-        df = pd.DataFrame(results, columns=['Image', 'Prediction', 'Empty/Dead'])
+        df = pd.DataFrame(results, columns=['Image', 'Peeling', 'Contamination', 'Cell Density', 'Empty/Dead'])
         df.to_csv(output_csv, index=False)
         print(f"Predictions saved to {output_csv}")
     else:
