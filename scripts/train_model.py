@@ -1,30 +1,50 @@
 import os
-from joblib import dump
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
 import numpy as np
 import gc
+from sklearn.preprocessing import StandardScaler
 from scripts.parse_csv_to_dict import parse_csv_to_dict
 from scripts.link_images_to_scores import link_images_to_scores
+import tensorflow as tf
+from joblib import dump
+from tensorflow.keras.models import Sequential # type: ignore
+from tensorflow.keras.layers import Dense, Dropout # type: ignore
+from tensorflow.keras.callbacks import EarlyStopping # type: ignore
 
-def train_in_batches(X, y, batch_size=100):
-    print("X type:", type(X))
-    print("X sample:", X[:1])  # Print the first element to see its structure
-    print("X dimensions:", np.array(X).ndim)  # Print the number of dimensions of X
+# Check if GPU is available
+physical_devices = tf.config.list_physical_devices('GPU')
+if physical_devices:
+    print("Using GPU")
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+else:
+    print("Using CPU")
 
-    X = np.array(X, dtype=np.float32)  # Convert X to numpy array, ensuring it's 2D
-    scaler = StandardScaler()
-    X = scaler.fit_transform(X)  # Normalize the features
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+def train_in_batches(X, y, batch_size=100, epochs=50, patience=5):
+    # Convert X and y to numpy arrays and ensure they are 2D
+    X = np.array(X, dtype=np.float32)
+    y = np.array(y, dtype=np.float32)
     
-    for i in range(0, len(X), batch_size):
-        X_batch = X[i:i+batch_size]
-        y_batch = y[i:i+batch_size]
-        model.fit(X_batch, y_batch)
-        
-        # Free memory after each batch
-        del X_batch, y_batch
-        gc.collect()
+    # Standardize features
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+    
+    # Define the model architecture
+    model = Sequential([
+        Dense(128, activation='relu', input_shape=(X.shape[1],)),
+        Dropout(0.2),
+        Dense(64, activation='relu'),
+        Dropout(0.2),
+        Dense(32, activation='relu'),
+        Dense(y.shape[1], activation='linear')  # Linear output for regression
+    ])
+    
+    # Compile the model
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    
+    # Early stopping to prevent overfitting
+    early_stopping = EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True)
+    
+    # Train the model
+    model.fit(X, y, batch_size=batch_size, epochs=epochs, validation_split=0.2, callbacks=[early_stopping], verbose=1)
     
     return model, scaler
 
@@ -41,21 +61,12 @@ if __name__ == "__main__":
         X_filtered, y_filtered = [], []
         for img, score in zip(X_part, y_part):
             if score[3] != 1:  # Exclude images with empty/dead = 1
-                # Count labeled pixels directly on the preprocessed image
                 num_peeling_pixels = np.sum(img == 3)
                 num_neuron_cells = np.sum(img == 2)
-                
-                # Create feature vector correctly as a list of numerical values
-                feature_vector = [num_peeling_pixels, num_neuron_cells, score[2]]  # Use the provided cell_density score
-                
+                feature_vector = [num_peeling_pixels, num_neuron_cells, score[2]]
                 X_filtered.append(feature_vector)
-                y_filtered.append(score)  # Use the authentic density score from y_part
-
-        # Debugging print statements to inspect X_filtered
-        print("X_filtered sample:", X_filtered[:1])  # Print the first element of X_filtered
-        print("X_filtered type:", type(X_filtered[0]))  # Print the type of elements in X_filtered
-        print("X_filtered shape:", len(X_filtered), len(X_filtered[0]) if X_filtered else 'N/A')
-
+                y_filtered.append(score)
+        
         X.extend(X_filtered)
         y.extend(y_filtered)
         
@@ -63,12 +74,10 @@ if __name__ == "__main__":
         del X_part, y_part
         gc.collect()
     
-    model, scaler = train_in_batches(X, y)  # Use batch training
+    model, scaler = train_in_batches(X, y)
     
-    # Ensure the models directory exists
+    # Save the model and scaler
     os.makedirs('models', exist_ok=True)
-    
-    dump(model, 'models/classifier_model.pkl')
-    dump(scaler, 'models/scaler.pkl')  # Save the scaler for later use
-
+    model.save('models/classifier_model.keras')
+    dump(scaler, 'models/scaler.pkl')
 

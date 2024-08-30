@@ -174,7 +174,7 @@ def _isFilled(region) -> bool:
     
     # Define thresholds for extent and solidity to consider the region as filled
     extent_threshold = 0.7 
-    solidity_threshold = 0.95  
+    solidity_threshold = 0.85  
     
     # Check if both extent and solidity are above their respective thresholds
     is_filled_region = (extent > extent_threshold) and (solidity > solidity_threshold)
