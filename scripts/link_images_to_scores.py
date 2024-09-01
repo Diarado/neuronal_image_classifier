@@ -33,6 +33,6 @@ def link_images_to_scores(image_dir, csv_dict):
                     y.append(scores)
                 else:
                     print(f"Plate info {plate_info} not found in CSV dictionary.")
-    # print(X)
+    print(X)
     # print(y)
     return X, y
