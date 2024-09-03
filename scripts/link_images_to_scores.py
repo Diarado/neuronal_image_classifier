@@ -5,7 +5,7 @@ import os
 
 def link_images_to_scores(image_dir, csv_dict):
     X, y = [], []
-
+    extracted_feature_lst = [] # list of [is_dead, peeling_degree, contamination_degree, cell_density]
     for root, dirs, files in os.walk(image_dir):
         for file in files:
             if file.endswith('.tif'):
@@ -25,14 +25,14 @@ def link_images_to_scores(image_dir, csv_dict):
                     scores = csv_dict[plate_info][fld_num]
 
                     # Preprocess the image
-                    processed_image, _, _, _= preprocess_image(image_path)
-
-                    
+                    processed_image, extracted_features = preprocess_image(image_path)
 
                     X.append(processed_image)
                     y.append(scores)
+                    extracted_feature_lst.append(extracted_features)
                 else:
                     print(f"Plate info {plate_info} not found in CSV dictionary.")
-    print(X)
-    # print(y)
-    return X, y
+    # print(X)
+    print(y)
+    print(extracted_feature_lst)
+    return X, y, extracted_feature_lst

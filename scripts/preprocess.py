@@ -42,7 +42,7 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
         print("Image is mostly black. Marking as dead cell.")
         dummy_labeled_image = np.zeros(target_size, dtype=np.uint8)
         gc.collect()
-        return dummy_labeled_image, is_dead, 0, 0  # No cell density for dead images
+        return dummy_labeled_image, [is_dead, 0, 0, 0]  # No cell density for dead images
 
     # Plot a histogram of the intensity values
     hist, bins = np.histogram(resized_image.ravel(), bins=256)
@@ -66,7 +66,10 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
     
     cell_density = 0  
     is_round = True
-    
+    good_cell_cnt = 0
+    good_cell_pixels = 0
+    bad_cell_cnt = 0
+
     for region in regions:
         
         is_round = region.eccentricity < 0.8
@@ -75,27 +78,46 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
         
 
         if region.mean_intensity > (thresh-500) and region.area > 10000 or (_isFilled(region) and region.area > 10000):
-            labeled_image[region.coords[:, 0], region.coords[:, 1]] = 3  # Peeling
+            if region.area < 512*512*0.8:
+                labeled_image[region.coords[:, 0], region.coords[:, 1]] = 3  # Peeling
+            else:
+                print("Image is mostly black. Marking as dead cell.")
+                print("case 2")
+                dummy_labeled_image = np.zeros(target_size, dtype=np.uint8)
+                gc.collect()
+                return dummy_labeled_image, [is_dead, 0, 0, 0]  # No cell density for dead images
+
         elif 1 < region.area:
-            if region.mean_intensity < thresh-12000 and region.area <= 300: # too dim, contamination automatically
+            if region.mean_intensity < thresh-12000 and region.area <= 100: # too dim, contamination automatically
                 labeled_image[region.coords[:, 0], region.coords[:, 1]] = 1  # Contamination
-            elif (is_round and extent and aspect_ratio < 2) or _hasAxon(region) or region.area > 300:  # if it has axon, then no matter what it's a neuron
+                bad_cell_cnt += 1
+            elif (is_round and extent and aspect_ratio < 2) or _hasAxon(region) or region.area > 100:  # if it has axon, then no matter what it's a neuron
                 labeled_image[region.coords[:, 0], region.coords[:, 1]] = 2  # Desired neuron cells
-                cell_density += 1
+                good_cell_cnt += 1
+                good_cell_pixels += region.area
             else:
                 labeled_image[region.coords[:, 0], region.coords[:, 1]] = 1  # Contamination
+                bad_cell_cnt += 1
         else:
             labeled_image[region.coords[:, 0], region.coords[:, 1]] = 0  # Background
-    
+
+    alpha = 0.8  # Weight for the area
+    beta = 100   # Weight for the count
+    cell_density = (alpha * good_cell_pixels + beta * good_cell_cnt)
+   
     # Debug: Check if the labeling is working
     print(f"Number of pixels labeled as Peeling (3): {np.sum(labeled_image == 3)}")
     print(f"Number of pixels labeled as Desired neuron cells (2): {np.sum(labeled_image == 2)}")
     print(f"Number of pixels labeled as Contamination (1): {np.sum(labeled_image == 1)}")
     print(f"Number of pixels labeled as Background (0): {np.sum(labeled_image == 0)}")
+    print(f"good_cell_pixels: {(good_cell_pixels)}")
+    print(f"good_cell_cnt: {(good_cell_cnt)}")
+    print(f"density: {(cell_density)}")
+
     peeling_degree = 3 # can be 1,2,3
-    if np.sum(labeled_image == 3) > 20000:
+    if np.sum(labeled_image == 3) > 10000:
         peeling_degree = 1
-    elif 10000 < np.sum(labeled_image == 3) <= 20000:
+    elif 5000 < np.sum(labeled_image == 3) <= 10000:
         peeling_degree = 2
 
     # Save memory     
@@ -109,11 +131,13 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
     # plt.colorbar()  
     # plt.show()
 
+    contamination_degree = bad_cell_cnt
+    # add contamination, only depend on numbers
+    extracted_features = [is_dead, peeling_degree, contamination_degree, cell_density]
 
-    return labeled_image, is_dead, peeling_degree, cell_density
+    return labeled_image, extracted_features
 
-from skimage import morphology, measure
-import numpy as np
+
 
 def _hasAxon(region) -> bool:
     """

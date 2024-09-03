@@ -1,11 +1,11 @@
 import os
 import numpy as np
 import pandas as pd
-from tensorflow.keras.models import load_model  # type: ignore
+from tensorflow.keras.models import load_model # type: ignore
 from scripts.preprocess import preprocess_image
 
 def preprocess_and_prepare(image_path):
-    labeled_image, is_dead, peeling_degree, density = preprocess_image(image_path)
+    labeled_image, extracted_features = preprocess_image(image_path)
     
     # Ensure the image has a channel dimension (expand if grayscale)
     if len(labeled_image.shape) == 2:
@@ -19,7 +19,12 @@ def preprocess_and_prepare(image_path):
     labeled_image = labeled_image.astype('float32') / 255.0
     labeled_image = np.expand_dims(labeled_image, axis=0)  # Add batch dimension
 
-    return labeled_image, is_dead, peeling_degree, density
+    # Ensure extracted features are converted to a NumPy array and have the correct shape
+    extracted_features = np.array(extracted_features, dtype=np.float32)
+    
+    extracted_features = np.expand_dims(extracted_features, axis=0)  # Add batch dimension
+
+    return labeled_image, extracted_features
 
 def test_model(image_dir, model_path='models/classifier_model.keras', output_csv='predictions.csv'):
     model = load_model(model_path)
@@ -29,20 +34,20 @@ def test_model(image_dir, model_path='models/classifier_model.keras', output_csv
     results = []
 
     for image_path in image_paths:
-        labeled_image, is_dead, peeling_degree, cell_density = preprocess_and_prepare(image_path)
-        
-        predictions = model.predict(labeled_image)
+        labeled_image, extracted_features = preprocess_and_prepare(image_path)
+        is_dead = bool(extracted_features[0][0])  # Extract the 'is_dead' feature
+        peeling_degree = extracted_features[0][1]
+        print(f"Shape of labeled_image: {labeled_image.shape}")
+        print(f"Shape of extracted_features: {extracted_features.shape}")
+
+        # Ensure the input sizes match what the model expects
+        predictions = model.predict([labeled_image, extracted_features])
         
         # Convert predictions to the most likely class (1, 2, or 3)
-        predictions_peeling = np.argmax(predictions[0]) + 1
-        predictions_contamination = np.argmax(predictions[1]) + 1
-        predictions_density = np.argmax(predictions[2]) + 1
+        predictions_contamination = np.argmax(predictions[1], axis=1)[0] + 1
+        predictions_density = np.argmax(predictions[2], axis=1)[0] + 1
 
-        # If peeling_degree is explicitly set, override predictions_peeling
-        if peeling_degree != 3:
-            predictions_peeling = peeling_degree
-        
-        results.append((os.path.basename(image_path), predictions_peeling, predictions_contamination, predictions_density, is_dead))
+        results.append((os.path.basename(image_path), peeling_degree, predictions_contamination, predictions_density, is_dead))
     
     if results:
         df = pd.DataFrame(results, columns=['Image', 'Peeling', 'Contamination', 'Cell Density', 'Empty/Dead'])
@@ -53,5 +58,7 @@ def test_model(image_dir, model_path='models/classifier_model.keras', output_csv
 
 if __name__ == "__main__":
     test_model('data/images')
+
+
 
 
