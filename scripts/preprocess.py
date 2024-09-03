@@ -48,8 +48,8 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
     hist, bins = np.histogram(resized_image.ravel(), bins=256)
     
     # Find two peaks in the histogram
-    peak1 = np.argmax(hist[:128])  # assuming contamination has lower intensity
-    peak2 = np.argmax(hist[128:]) + 128  # assuming desired cells have higher intensity
+    peak1 = np.argmax(hist[:128])  # contamination has lower intensity
+    peak2 = np.argmax(hist[128:]) + 128  # desired cells have higher intensity
     
     # Set threshold as the midpoint between the two peaks
     thresh = (bins[peak1] + bins[peak2]) / 2
