@@ -1,5 +1,4 @@
 import os
-from scripts.parse_csv_to_dict import parse_csv_to_dict
 from scripts.preprocess import preprocess_image
 import os
 

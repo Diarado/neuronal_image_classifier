@@ -13,6 +13,7 @@ from tensorflow.keras.applications import ResNet50 # type: ignore
 import tensorflow.keras.backend as K # type: ignore
 from tensorflow.keras.mixed_precision import set_global_policy, Policy # type: ignore
 from sklearn.model_selection import KFold
+from keras.optimizers import Adam # type: ignore
 
 policy = Policy('mixed_float16')
 set_global_policy(policy)
@@ -83,7 +84,7 @@ def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=20, pati
         layer.trainable = False
 
     # Compile the model
-    model.compile(optimizer='adam', 
+    model.compile(optimizer=Adam(learning_rate=0.001),
                   loss={'peeling_output': 'categorical_crossentropy', 
                         'contamination_output': 'categorical_crossentropy',
                         'density_output': 'categorical_crossentropy'},
@@ -120,8 +121,40 @@ def data_generator(X, y, extracted_feature_lst, batch_size):
 
     return dataset
 
+def cross_validate_model(X, y, extracted_feature_lst, num_folds=5, batch_size=32, epochs=20, patience=5):
+    kf = KFold(n_splits=num_folds, shuffle=True, random_state=42)
+    fold_results = []
+
+    for fold, (train_index, val_index) in enumerate(kf.split(X)):
+        print(f"Training on fold {fold + 1}/{num_folds}...")
+        
+        # Split data into train and validation sets
+        X_train, X_val = X[train_index], X[val_index]
+        y_train, y_val = y[train_index], y[val_index]
+        feature_tain, feature_val = extracted_feature_lst[train_index], extracted_feature_lst[val_index]
+        # Train the model on this fold
+        model, _ = train_in_batches(X_train, y_train, feature_tain,
+                                          batch_size=batch_size, 
+                                          epochs=epochs, 
+                                          patience=patience)
+
+        # Evaluate the model on the validation set
+        val_dataset = data_generator(X_val, y_val, feature_val, batch_size)
+        val_steps = len(X_val) // batch_size
+        results = model.evaluate(val_dataset, steps=val_steps, verbose=1)
+        
+        fold_results.append(results)
+        print(f"Results for fold {fold + 1}: {results}")
+    
+    # Aggregate results across all folds
+    avg_results = np.mean(fold_results, axis=0)
+    print(f"Average cross-validation results: {avg_results}")
+    
+    return avg_results
+
 if __name__ == "__main__":
     # to set
+    # rounds = ['round06', 'round09', 'round11']
     rounds = ['test']
 
     image_dir_lst = [f'train/{round}_images' for round in rounds]
@@ -175,7 +208,7 @@ if __name__ == "__main__":
     if len(X) > 0 and len(y) > 0 and len(extracted_feature_lst):  # Check to ensure data is not empty
         extracted_feature_lst = np.array(extracted_feature_lst)
         # Perform cross-validation
-        # avg_results = cross_validate_model(X, y, num_folds=5, batch_size=32)
+        # avg_results = cross_validate_model(X, y, extracted_feature_lst, num_folds=5, batch_size=32)
         # print("Cross-validation results:", avg_results)
 
         model, _ = train_in_batches(X, y, extracted_feature_lst, batch_size=32)
@@ -188,33 +221,3 @@ if __name__ == "__main__":
 
 
 
-def cross_validate_model(X, y, num_folds=5, batch_size=32, epochs=50, patience=5):
-    kf = KFold(n_splits=num_folds, shuffle=True, random_state=42)
-    fold_results = []
-
-    for fold, (train_index, val_index) in enumerate(kf.split(X)):
-        print(f"Training on fold {fold + 1}/{num_folds}...")
-        
-        # Split data into train and validation sets
-        X_train, X_val = X[train_index], X[val_index]
-        y_train, y_val = y[train_index], y[val_index]
-
-        # Train the model on this fold
-        model, history = train_in_batches(X_train, y_train, 
-                                          batch_size=batch_size, 
-                                          epochs=epochs, 
-                                          patience=patience)
-
-        # Evaluate the model on the validation set
-        val_dataset = data_generator(X_val, y_val, batch_size)
-        val_steps = len(X_val) // batch_size
-        results = model.evaluate(val_dataset, steps=val_steps, verbose=1)
-        
-        fold_results.append(results)
-        print(f"Results for fold {fold + 1}: {results}")
-    
-    # Aggregate results across all folds
-    avg_results = np.mean(fold_results, axis=0)
-    print(f"Average cross-validation results: {avg_results}")
-    
-    return avg_results

@@ -42,7 +42,7 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
         print("Image is mostly black. Marking as dead cell.")
         dummy_labeled_image = np.zeros(target_size, dtype=np.uint8)
         gc.collect()
-        return dummy_labeled_image, [is_dead, 0, 0, 0]  # No cell density for dead images
+        return dummy_labeled_image, [True, 0, 0, 0]  # No cell density for dead images
 
     # Plot a histogram of the intensity values
     hist, bins = np.histogram(resized_image.ravel(), bins=256)
@@ -78,14 +78,14 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
         
 
         if region.mean_intensity > (thresh-500) and region.area > 10000 or (_isFilled(region) and region.area > 10000):
-            if region.area < 512*512*0.8:
+            if region.area < 512*512*0.9:
                 labeled_image[region.coords[:, 0], region.coords[:, 1]] = 3  # Peeling
             else:
                 print("Image is mostly black. Marking as dead cell.")
                 print("case 2")
                 dummy_labeled_image = np.zeros(target_size, dtype=np.uint8)
                 gc.collect()
-                return dummy_labeled_image, [is_dead, 0, 0, 0]  # No cell density for dead images
+                return dummy_labeled_image, [True, 0, 0, 0]  # No cell density for dead images
 
         elif 1 < region.area:
             if region.mean_intensity < thresh-12000 and region.area <= 100: # too dim, contamination automatically
