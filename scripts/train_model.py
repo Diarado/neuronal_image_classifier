@@ -32,8 +32,7 @@ if gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
 else:
     print("No GPUs detected, using CPU.")
-
-    
+  
 def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=20, patience=5):
     # extracted_feature_lst records [is_dead, peeling_degree, contamination_degree, cell_density] for images in X and y
     # so X[i], y[i], extracted_feature_lst[i] are labled image, pre_assigned score (peeling 1-3, contamination 1-3, cell density 1-3, and dead 0/1),
@@ -142,11 +141,10 @@ def data_generator(X, y, extracted_feature_lst, batch_size):
 
     return dataset
 
-
 if __name__ == "__main__":
     # to set
     # rounds = ['round06', 'round09', 'round11']
-    rounds = ['round06']
+    rounds = ['test']
 
     image_dir_lst = [f'train/{round}_images' for round in rounds]
     csv_lst = [f'train/scoring_{round}.csv' for round in rounds]

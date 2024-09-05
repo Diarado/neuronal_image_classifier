@@ -4,7 +4,7 @@ from skimage.transform import resize
 import matplotlib.pyplot as plt
 import numpy as np
 import gc
-from skimage import io, color, transform, img_as_float
+from skimage import io, color, transform
 import os
 import pandas as pd
 
@@ -141,16 +141,15 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
     gc.collect()
 
     # Add this to visualize the labeled image, very helpful
-
     plt.imshow(labeled_image, cmap='nipy_spectral')  # 'nipy_spectral' gives distinct colors to labels
     plt.title(f"Labeled Image for {os.path.basename(image_path)}")
     plt.colorbar()  
     # plt.show()
     # save to test_label_imgs
-    save_folder = "test_label_imgs"
-    save_path = os.path.join(save_folder, f"{os.path.basename(image_path)}_labeled.png")
-    plt.savefig(save_path, bbox_inches='tight')
-    plt.clf()
+    # save_folder = "test_label_imgs"
+    # save_path = os.path.join(save_folder, f"{os.path.basename(image_path)}_labeled.png")
+    # plt.savefig(save_path, bbox_inches='tight')
+    # plt.clf()
 
     contamination_degree = bad_cell_cnt
     # add contamination, only depend on numbers
