@@ -59,7 +59,10 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
     labeled_image = np.zeros_like(resized_image, dtype=np.uint8)
     
     # Labeling regions based on intensity and area
-    binary_image = resized_image > thresh - 16000
+    binary_image = resized_image > thresh - 14000 # each round could be different
+    # -20000 work on dimmer ones
+    if mean_intensity < 4000:
+        binary_image = resized_image > thresh - 22000
 
     labeled_regions = label(binary_image)
     regions = regionprops(labeled_regions, intensity_image=resized_image)
@@ -88,16 +91,29 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
                 return dummy_labeled_image, [True, 0, 0, 0]  # No cell density for dead images
 
         elif 1 < region.area:
-            if region.mean_intensity < thresh-12000 and region.area <= 100: # too dim, contamination automatically
+            if region.mean_intensity < thresh-12000 and 12 < region.area <= 100 : # too dim, contamination automatically
                 labeled_image[region.coords[:, 0], region.coords[:, 1]] = 1  # Contamination
                 bad_cell_cnt += 1
-            elif (is_round and extent and aspect_ratio < 2) or _hasAxon(region) or region.area > 100:  # if it has axon, then no matter what it's a neuron
+            elif (
+                (is_round and extent and aspect_ratio < 2) or _hasAxon(region) or # if it has axon, then no matter what it's a neuron
+                (region.area > 100 and aspect_ratio < 3) or 
+                region.area > 800 or
+                (region.area > 400 and region.extent < 0.5)):  # multiple neurons linked together by thin axons
                 labeled_image[region.coords[:, 0], region.coords[:, 1]] = 2  # Desired neuron cells
                 good_cell_cnt += 1
                 good_cell_pixels += region.area
             else:
-                labeled_image[region.coords[:, 0], region.coords[:, 1]] = 1  # Contamination
-                bad_cell_cnt += 1
+                if region.area > 12:
+                    if aspect_ratio > 6: # likely a long axon
+                        labeled_image[region.coords[:, 0], region.coords[:, 1]] = 2  # Desired neuron cells
+                        good_cell_cnt += 1
+                    else:
+                        labeled_image[region.coords[:, 0], region.coords[:, 1]] = 1  # Contamination
+                        bad_cell_cnt += 1
+                        
+                else:
+                    labeled_image[region.coords[:, 0], region.coords[:, 1]] = 0 # too small, not contamination
+
         else:
             labeled_image[region.coords[:, 0], region.coords[:, 1]] = 0  # Background
 
@@ -121,21 +137,26 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
         peeling_degree = 2
 
     # Save memory     
-    del gray_image, downsampled_image, resized_image
+    del gray_image, downsampled_image
     gc.collect()
 
     # Add this to visualize the labeled image, very helpful
 
-    # plt.imshow(labeled_image, cmap='nipy_spectral')  # 'nipy_spectral' gives distinct colors to labels
-    # plt.title(f"Labeled Image for {os.path.basename(image_path)}")
-    # plt.colorbar()  
+    plt.imshow(labeled_image, cmap='nipy_spectral')  # 'nipy_spectral' gives distinct colors to labels
+    plt.title(f"Labeled Image for {os.path.basename(image_path)}")
+    plt.colorbar()  
     # plt.show()
+    # save to test_label_imgs
+    save_folder = "test_label_imgs"
+    save_path = os.path.join(save_folder, f"{os.path.basename(image_path)}_labeled.png")
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.clf()
 
     contamination_degree = bad_cell_cnt
     # add contamination, only depend on numbers
     extracted_features = [is_dead, peeling_degree, contamination_degree, cell_density]
 
-    return labeled_image, extracted_features
+    return resized_image, extracted_features
 
 
 
@@ -158,7 +179,7 @@ def _hasAxon(region) -> bool:
     labeled_spikes, num_spikes = measure.label(gradient, return_num=True, connectivity=1)
     
     # Define a minimum size for what we consider a spike (tiny protrusions)
-    min_spike_size = 5  
+    min_spike_size = 2 
 
     # Filter out small regions that are not likely to be spikes
     spike_regions = [r for r in measure.regionprops(labeled_spikes) if r.area >= min_spike_size]
@@ -167,7 +188,7 @@ def _hasAxon(region) -> bool:
     num_significant_spikes = len(spike_regions)
     
     # a threshold for spikes
-    spike_threshold = 10  
+    spike_threshold = 5  
 
     # Check if there are many spikes
     if num_significant_spikes > spike_threshold:

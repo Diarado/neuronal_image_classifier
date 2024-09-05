@@ -32,6 +32,6 @@ def link_images_to_scores(image_dir, csv_dict):
                 else:
                     print(f"Plate info {plate_info} not found in CSV dictionary.")
     # print(X)
-    print(y)
-    print(extracted_feature_lst)
+    # print(y)
+    # print(extracted_feature_lst)
     return X, y, extracted_feature_lst

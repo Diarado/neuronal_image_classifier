@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pandas as pd
 import gc
 import tensorflow as tf
 from sklearn.preprocessing import StandardScaler
@@ -37,6 +38,7 @@ def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=20, pati
     # extracted_feature_lst records [is_dead, peeling_degree, contamination_degree, cell_density] for images in X and y
     # so X[i], y[i], extracted_feature_lst[i] are labled image, pre_assigned score (peeling 1-3, contamination 1-3, cell density 1-3, and dead 0/1),
     # and extracted features for image i, respectively
+    
     K.clear_session()
     # Convert X and y to numpy arrays and ensure they are 4D
     X = np.array(X, dtype=np.float32)
@@ -57,11 +59,11 @@ def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=20, pati
     # Normalize image data
     X /= 255.0
 
-    image_input = Input(shape=(X.shape[1], X.shape[2], X.shape[3]), name='image_input')  # NEW
-    feature_input = Input(shape=(extracted_feature_lst.shape[1],), name='feature_input')  # NEW
+    image_input = Input(shape=(X.shape[1], X.shape[2], X.shape[3]), name='image_input')  
 
     # Load a pre-trained ResNet50 model without the top classification layer
-    base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(X.shape[1], X.shape[2], X.shape[3]), input_tensor=image_input)
+    base_model = ResNet50(weights='imagenet', include_top=False, 
+                          input_shape=(X.shape[1], X.shape[2], X.shape[3]), input_tensor=image_input)
 
     # Add custom classification layers on top
     x = base_model.output
@@ -69,15 +71,29 @@ def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=20, pati
     x = Dense(1024, activation='relu')(x)
     x = Dropout(0.5)(x)
 
+    feature_input = Input(shape=(extracted_feature_lst.shape[1],), name='feature_input') 
+    print('extracted_feature_lst.shape[1]: ' + str(extracted_feature_lst.shape[1]))
 
-    x = Concatenate()([x, feature_input])
+    # Extract individual features from the manual features
+    is_dead_input = feature_input[:, 0:1]  # is_dead
+    peeling_degree_input = feature_input[:, 1:2]  # peeling_degree
+    contamination_degree_input = feature_input[:, 2:3]  # contamination_degree
+    cell_density_input = feature_input[:, 3:4]  # cell_density
+
+    # Concatenate image features with relevant manual features for each output head
+    peeling_features = Concatenate()([x, peeling_degree_input])
+    contamination_features = Concatenate()([x, contamination_degree_input])
+    density_features = Concatenate()([x, cell_density_input])
+
     # Output layers for multi-output classification
-    peeling_output = Dense(3, activation='softmax', name='peeling_output', dtype='float32')(x)  # Ensure float32 for mixed precision
-    contamination_output = Dense(3, activation='softmax', name='contamination_output', dtype='float32')(x)  # Ensure float32 for mixed precision
-    density_output = Dense(3, activation='softmax', name='density_output', dtype='float32')(x)  # Ensure float32 for mixed precision
+    peeling_output = Dense(3, activation='softmax', name='peeling_output', dtype='float32')(peeling_features)
+    contamination_output = Dense(3, activation='softmax', name='contamination_output', dtype='float32')(contamination_features)
+    density_output = Dense(3, activation='softmax', name='density_output', dtype='float32')(density_features)
+    dead_output = Dense(1, activation='sigmoid', name='dead_output', dtype='float32')(is_dead_input)  # Binary classification
 
     # Define the model with multiple outputs
-    model = Model(inputs=[image_input, feature_input], outputs=[peeling_output, contamination_output, density_output])  # NEW
+    model = Model(inputs=[image_input, feature_input], 
+                  outputs=[peeling_output, contamination_output, density_output, dead_output])
 
     # Freeze the layers of the base model
     for layer in base_model.layers:
@@ -87,10 +103,12 @@ def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=20, pati
     model.compile(optimizer=Adam(learning_rate=0.001),
                   loss={'peeling_output': 'categorical_crossentropy', 
                         'contamination_output': 'categorical_crossentropy',
-                        'density_output': 'categorical_crossentropy'},
+                        'density_output': 'categorical_crossentropy',
+                        'dead_output': 'binary_crossentropy'},
                   metrics={'peeling_output': 'accuracy',
                            'contamination_output': 'accuracy',
-                           'density_output': 'accuracy'})
+                           'density_output': 'accuracy',
+                           'dead_output': 'accuracy'})
 
     # Early stopping to prevent overfitting
     early_stopping = EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True)
@@ -105,57 +123,30 @@ def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=20, pati
     return model, None  # Scaler is not needed for image data
 
 def convert_to_one_hot(y):
-    y = {
-        'peeling_output': tf.one_hot(tf.cast(y[:, 0] - 1, tf.int32), depth=3),
-        'contamination_output': tf.one_hot(tf.cast(y[:, 1] - 1, tf.int32), depth=3),
-        'density_output': tf.one_hot(tf.cast(y[:, 2] - 1, tf.int32), depth=3),
+    return {
+        'peeling_output': tf.one_hot(tf.cast(y[:, 0] - 1, tf.int32), depth=3),  # Peeling 1-3
+        'contamination_output': tf.one_hot(tf.cast(y[:, 1] - 1, tf.int32), depth=3),  # Contamination 1-3
+        'density_output': tf.one_hot(tf.cast(y[:, 2] - 1, tf.int32), depth=3),  # Density 1-3
+        'dead_output': y[:, 3:4]  # Dead is binary 0 or 1, no need for one-hot
     }
-    return y
 
+# Data generator function
 def data_generator(X, y, extracted_feature_lst, batch_size):
+    # Create dataset from images, manual features, and labels
     dataset = tf.data.Dataset.from_tensor_slices(((X, extracted_feature_lst), y))
     dataset = dataset.shuffle(buffer_size=len(X))
     dataset = dataset.batch(batch_size)
 
+    # Map the dataset to convert labels to one-hot encoding
     dataset = dataset.map(lambda inputs, y: (inputs, convert_to_one_hot(y)))
 
     return dataset
 
-def cross_validate_model(X, y, extracted_feature_lst, num_folds=5, batch_size=32, epochs=20, patience=5):
-    kf = KFold(n_splits=num_folds, shuffle=True, random_state=42)
-    fold_results = []
-
-    for fold, (train_index, val_index) in enumerate(kf.split(X)):
-        print(f"Training on fold {fold + 1}/{num_folds}...")
-        
-        # Split data into train and validation sets
-        X_train, X_val = X[train_index], X[val_index]
-        y_train, y_val = y[train_index], y[val_index]
-        feature_tain, feature_val = extracted_feature_lst[train_index], extracted_feature_lst[val_index]
-        # Train the model on this fold
-        model, _ = train_in_batches(X_train, y_train, feature_tain,
-                                          batch_size=batch_size, 
-                                          epochs=epochs, 
-                                          patience=patience)
-
-        # Evaluate the model on the validation set
-        val_dataset = data_generator(X_val, y_val, feature_val, batch_size)
-        val_steps = len(X_val) // batch_size
-        results = model.evaluate(val_dataset, steps=val_steps, verbose=1)
-        
-        fold_results.append(results)
-        print(f"Results for fold {fold + 1}: {results}")
-    
-    # Aggregate results across all folds
-    avg_results = np.mean(fold_results, axis=0)
-    print(f"Average cross-validation results: {avg_results}")
-    
-    return avg_results
 
 if __name__ == "__main__":
     # to set
     # rounds = ['round06', 'round09', 'round11']
-    rounds = ['test']
+    rounds = ['round06']
 
     image_dir_lst = [f'train/{round}_images' for round in rounds]
     csv_lst = [f'train/scoring_{round}.csv' for round in rounds]
@@ -173,24 +164,31 @@ if __name__ == "__main__":
         y = np.load(y_path)
         extracted_feature_lst = np.load(features_path)
     else:
+        # Initialize empty lists
         X, y, extracted_feature_lst = [], [], []
+
+        # Iterate over the image directories and CSV files
         for image_dir, csv_file in zip(image_dir_lst, csv_lst):
             csv_dict = parse_csv_to_dict(csv_file)
-            X_part, y_part, extracted_feature_lst_part = link_images_to_scores(image_dir, csv_dict) # performs labeling
-
+            
+            # Link images to scores
+            X_part, y_part, extracted_feature_lst_part = link_images_to_scores(image_dir, csv_dict) 
+            
+            # Optional filtering step: Add logic if needed
             X_filtered, y_filtered, extracted_feature_lst_filtered = [], [], []
             for img, score, features in zip(X_part, y_part, extracted_feature_lst_part):
-                if score[3] != 1 and score[0] != 1: # we don't train on dead and severely peeling samples
+                if True:  # Placeholder for any filtering logic
                     X_filtered.append(img)
                     y_filtered.append(score)
                     extracted_feature_lst_filtered.append(features)
 
-            
+            # Extend the main lists with filtered data
             X.extend(X_filtered)
             y.extend(y_filtered)
             extracted_feature_lst.extend(extracted_feature_lst_filtered)
-            
-            del X_part, y_part
+
+            # Memory management after processing each round
+            del X_part, y_part, extracted_feature_lst_part, X_filtered, y_filtered, extracted_feature_lst_filtered
             gc.collect()
 
         if len(X) > 0 and len(y) > 0:
@@ -198,26 +196,23 @@ if __name__ == "__main__":
             y = np.array(y)
             extracted_feature_lst = np.array(extracted_feature_lst)
 
+            # Save data for future use
             print("Saving labeled images, scores, and features to disk...")
             np.save(X_path, X)
             np.save(y_path, y)
             np.save(features_path, extracted_feature_lst)
         else:
             print("No data to save.")
-    
-    if len(X) > 0 and len(y) > 0 and len(extracted_feature_lst):  # Check to ensure data is not empty
-        extracted_feature_lst = np.array(extracted_feature_lst)
-        # Perform cross-validation
-        # avg_results = cross_validate_model(X, y, extracted_feature_lst, num_folds=5, batch_size=32)
-        # print("Cross-validation results:", avg_results)
 
+    # Train the model if data is available
+    if len(X) > 0 and len(y) > 0 and len(extracted_feature_lst) > 0:
+        extracted_feature_lst = np.array(extracted_feature_lst)
+
+        # Perform training (or cross-validation if needed)
         model, _ = train_in_batches(X, y, extracted_feature_lst, batch_size=32)
         
-        # Save the model
+        # Save the trained model
         os.makedirs('models', exist_ok=True)
         model.save('models/classifier_model.keras')
     else:
         print("No data to train on.")
-
-
-
