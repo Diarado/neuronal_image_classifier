@@ -141,9 +141,9 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
     gc.collect()
 
     # Add this to visualize the labeled image, very helpful
-    plt.imshow(labeled_image, cmap='nipy_spectral')  # 'nipy_spectral' gives distinct colors to labels
-    plt.title(f"Labeled Image for {os.path.basename(image_path)}")
-    plt.colorbar()  
+    # plt.imshow(labeled_image, cmap='nipy_spectral')  # 'nipy_spectral' gives distinct colors to labels
+    # plt.title(f"Labeled Image for {os.path.basename(image_path)}")
+    # plt.colorbar()  
     # plt.show()
     # save to test_label_imgs
     # save_folder = "test_label_imgs"
@@ -153,7 +153,7 @@ def preprocess_image(image_path, target_size=(512, 512), black_threshold=2500):
 
     contamination_degree = bad_cell_cnt
     # add contamination, only depend on numbers
-    extracted_features = [is_dead, peeling_degree, contamination_degree, cell_density]
+    extracted_features = [int(is_dead), peeling_degree, contamination_degree, cell_density]
 
     return resized_image, extracted_features
 

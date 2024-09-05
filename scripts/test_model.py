@@ -44,10 +44,11 @@ def test_model(image_dir, model_path='models/classifier_model.keras', output_csv
         predictions = model.predict([labeled_image, extracted_features])
         
         # Convert predictions to the most likely class (1, 2, or 3)
+        predictions_peel = np.argmax(predictions[0], axis=1)[0] + 1
         predictions_contamination = np.argmax(predictions[1], axis=1)[0] + 1
         predictions_density = np.argmax(predictions[2], axis=1)[0] + 1
 
-        results.append((os.path.basename(image_path), int(peeling_degree), predictions_contamination, predictions_density, is_dead))
+        results.append((os.path.basename(image_path), predictions_peel, predictions_contamination, predictions_density, is_dead))
     
     if results:
         df = pd.DataFrame(results, columns=['Image', 'Peeling', 'Contamination', 'Cell Density', 'Empty/Dead'])

@@ -36,5 +36,5 @@ def parse_csv_to_dict(csv_path):
                 
             # Store the list of fields for the plate_info key
             data_dict[plate_info] = fields
-    # print(data_dict)
+    print(data_dict)
     return data_dict

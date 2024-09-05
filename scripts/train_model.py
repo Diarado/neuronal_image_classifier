@@ -15,136 +15,198 @@ import tensorflow.keras.backend as K # type: ignore
 from tensorflow.keras.mixed_precision import set_global_policy, Policy # type: ignore
 from sklearn.model_selection import KFold
 from keras.optimizers import Adam # type: ignore
+from sklearn.utils.class_weight import compute_class_weight
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-policy = Policy('mixed_float16')
-set_global_policy(policy)
+# Set policy for mixed precision
+policy = tf.keras.mixed_precision.Policy('mixed_float16')
+tf.keras.mixed_precision.set_global_policy(policy)
 
-print("Is TensorFlow built with CUDA?", tf.test.is_built_with_cuda())  # False
-print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU'))) # 0 
+print("Is TensorFlow built with CUDA?", tf.test.is_built_with_cuda())
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
+# GPU memory management
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     print(f"GPUs detected: {len(gpus)}")
     for gpu in gpus:
         print(f"- {gpu}")
-    # Optionally, set memory growth to avoid allocating all memory at once
-    for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
 else:
     print("No GPUs detected, using CPU.")
-  
-def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=20, patience=5):
-    # extracted_feature_lst records [is_dead, peeling_degree, contamination_degree, cell_density] for images in X and y
-    # so X[i], y[i], extracted_feature_lst[i] are labled image, pre_assigned score (peeling 1-3, contamination 1-3, cell density 1-3, and dead 0/1),
-    # and extracted features for image i, respectively
-    
-    K.clear_session()
-    # Convert X and y to numpy arrays and ensure they are 4D
-    X = np.array(X, dtype=np.float32)
-    extracted_feature_lst = np.array(extracted_feature_lst, dtype=np.float32)
-    # Add a channel dimension if X is 3D (grayscale)
-    if len(X.shape) == 3:
-        X = np.expand_dims(X, axis=-1)  # Expand to (num_samples, height, width, 1)
 
-    # If X has 1 channel, duplicate it to create 3 channels
-    if X.shape[-1] == 1:
-        X = np.repeat(X, 3, axis=-1)  # Convert 1-channel grayscale to 3-channel
+# Data generator with augmentation but fixed extracted features
+def data_generator_with_augmentation(X, y, extracted_feature_lst, batch_size):
+    # Augmentation only on image data (not on extracted features)
+    datagen = ImageDataGenerator(
+        rotation_range=20,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True,
+        fill_mode='nearest'
+    )
 
-    # Ensure X has the correct shape
-    assert X.shape[-1] == 3, f"Expected 3-channel input, but got shape {X.shape}"
+    # Create a generator for augmented images
+    image_generator = datagen.flow(X, batch_size=batch_size, shuffle=False)
 
-    y = np.array(y, dtype=np.float32)
+    def generator():
+        while True:
+            image_batch = next(image_generator)
+            batch_size_actual = image_batch.shape[0]
+            feature_batch = extracted_feature_lst[:batch_size_actual]
+            label_batch = y[:batch_size_actual]
 
-    # Normalize image data
-    X /= 255.0
+            # Yield a tuple for inputs instead of a list
+            yield ((image_batch, feature_batch), convert_to_one_hot(label_batch))
 
-    image_input = Input(shape=(X.shape[1], X.shape[2], X.shape[3]), name='image_input')  
+    # Define the output signature (specifying the types and shapes of the output)
+    output_signature = (
+        (
+            tf.TensorSpec(shape=(None, X.shape[1], X.shape[2], X.shape[3]), dtype=tf.float32),  # Image batch
+            tf.TensorSpec(shape=(None, extracted_feature_lst.shape[1]), dtype=tf.float32)  # Extracted features batch
+        ),
+        {
+            'peeling_output': tf.TensorSpec(shape=(None, 3), dtype=tf.float32),
+            'contamination_output': tf.TensorSpec(shape=(None, 3), dtype=tf.float32),
+            'density_output': tf.TensorSpec(shape=(None, 3), dtype=tf.float32)
+        }
+    )
 
-    # Load a pre-trained ResNet50 model without the top classification layer
-    base_model = ResNet50(weights='imagenet', include_top=False, 
-                          input_shape=(X.shape[1], X.shape[2], X.shape[3]), input_tensor=image_input)
+    # Create dataset using the generator
+    dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
 
-    # Add custom classification layers on top
-    x = base_model.output
-    x = GlobalAveragePooling2D()(x)
-    x = Dense(1024, activation='relu')(x)
-    x = Dropout(0.5)(x)
+    return dataset
 
-    feature_input = Input(shape=(extracted_feature_lst.shape[1],), name='feature_input') 
-    print('extracted_feature_lst.shape[1]: ' + str(extracted_feature_lst.shape[1]))
 
-    # Extract individual features from the manual features
-    is_dead_input = feature_input[:, 0:1]  # is_dead
-    peeling_degree_input = feature_input[:, 1:2]  # peeling_degree
-    contamination_degree_input = feature_input[:, 2:3]  # contamination_degree
-    cell_density_input = feature_input[:, 3:4]  # cell_density
 
-    # Concatenate image features with relevant manual features for each output head
-    peeling_features = Concatenate()([x, peeling_degree_input])
-    contamination_features = Concatenate()([x, contamination_degree_input])
-    density_features = Concatenate()([x, cell_density_input])
-
-    # Output layers for multi-output classification
-    peeling_output = Dense(3, activation='softmax', name='peeling_output', dtype='float32')(peeling_features)
-    contamination_output = Dense(3, activation='softmax', name='contamination_output', dtype='float32')(contamination_features)
-    density_output = Dense(3, activation='softmax', name='density_output', dtype='float32')(density_features)
-    dead_output = Dense(1, activation='sigmoid', name='dead_output', dtype='float32')(is_dead_input)  # Binary classification
-
-    # Define the model with multiple outputs
-    model = Model(inputs=[image_input, feature_input], 
-                  outputs=[peeling_output, contamination_output, density_output, dead_output])
-
-    # Freeze the layers of the base model
-    for layer in base_model.layers:
-        layer.trainable = False
-
-    # Compile the model
-    model.compile(optimizer=Adam(learning_rate=0.001),
-                  loss={'peeling_output': 'categorical_crossentropy', 
-                        'contamination_output': 'categorical_crossentropy',
-                        'density_output': 'categorical_crossentropy',
-                        'dead_output': 'binary_crossentropy'},
-                  metrics={'peeling_output': 'accuracy',
-                           'contamination_output': 'accuracy',
-                           'density_output': 'accuracy',
-                           'dead_output': 'accuracy'})
-
-    # Early stopping to prevent overfitting
-    early_stopping = EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True)
-
-    train_dataset = data_generator(X, y, extracted_feature_lst, batch_size)
-
-    steps_per_epoch = len(X) // batch_size
-
-    model.fit(train_dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, 
-              callbacks=[early_stopping], verbose=1)
-    
-    return model, None  # Scaler is not needed for image data
-
+# Convert labels to one-hot encoding
 def convert_to_one_hot(y):
     return {
         'peeling_output': tf.one_hot(tf.cast(y[:, 0] - 1, tf.int32), depth=3),  # Peeling 1-3
         'contamination_output': tf.one_hot(tf.cast(y[:, 1] - 1, tf.int32), depth=3),  # Contamination 1-3
         'density_output': tf.one_hot(tf.cast(y[:, 2] - 1, tf.int32), depth=3),  # Density 1-3
-        'dead_output': y[:, 3:4]  # Dead is binary 0 or 1, no need for one-hot
     }
 
-# Data generator function
-def data_generator(X, y, extracted_feature_lst, batch_size):
-    # Create dataset from images, manual features, and labels
-    dataset = tf.data.Dataset.from_tensor_slices(((X, extracted_feature_lst), y))
-    dataset = dataset.shuffle(buffer_size=len(X))
-    dataset = dataset.batch(batch_size)
+# Training function with transfer learning, data augmentation, and regularization
+def train_in_batches(X, y, extracted_feature_lst, batch_size=32, epochs=5, patience=5):
+    print('original y:')
+    print(y[:100])
+    K.clear_session()
 
-    # Map the dataset to convert labels to one-hot encoding
-    dataset = dataset.map(lambda inputs, y: (inputs, convert_to_one_hot(y)))
+    # Normalize extracted features using StandardScaler
+    scaler = StandardScaler()
+    extracted_feature_lst = scaler.fit_transform(extracted_feature_lst)
 
-    return dataset
+    # Convert X and y to numpy arrays and ensure they are 4D
+    X = np.array(X, dtype=np.float32)
+    extracted_feature_lst = np.array(extracted_feature_lst, dtype=np.float32)
+
+    # Add a channel dimension if X is 3D (grayscale)
+    if len(X.shape) == 3:
+        X = np.expand_dims(X, axis=-1)
+
+    # If X has 1 channel, duplicate it to create 3 channels
+    if X.shape[-1] == 1:
+        X = np.repeat(X, 3, axis=-1)
+
+    # Normalize image data
+    X /= 255.0
+
+    # Input layers for image and extracted features
+    image_input = Input(shape=(X.shape[1], X.shape[2], X.shape[3]), name='image_input')
+    feature_input = Input(shape=(extracted_feature_lst.shape[1],), name='feature_input')
+
+    # Load a pre-trained ResNet50 model without the top classification layer
+    base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(X.shape[1], X.shape[2], X.shape[3]), input_tensor=image_input)
+
+    # Add custom classification layers on top with dropout and L2 regularization
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    x = Dense(1024, activation='relu', kernel_regularizer=l2(0.001))(x)
+    x = Dropout(0.5)(x)
+
+    # Concatenate image features with manually extracted features
+    peeling_degree_input = feature_input[:, 1:2]
+    contamination_degree_input = feature_input[:, 2:3]
+    cell_density_input = feature_input[:, 3:4]
+
+    peeling_features = Concatenate()([x, peeling_degree_input])
+    contamination_features = Concatenate()([x, contamination_degree_input])
+    density_features = Concatenate()([x, cell_density_input])
+
+    # Output layers for multi-output classification
+    peeling_output = Dense(3, activation='softmax', name='peeling_output')(peeling_features)
+    contamination_output = Dense(3, activation='softmax', name='contamination_output')(contamination_features)
+    density_output = Dense(3, activation='softmax', name='density_output')(density_features)
+
+    # Define the model
+    model = Model(inputs=[image_input, feature_input], outputs=[peeling_output, contamination_output, density_output])
+
+    # Freeze the layers of the base model (ResNet50)
+    for layer in base_model.layers[-10:]:
+        layer.trainable = False
+
+    # Compile the model
+    model.compile(optimizer=Adam(learning_rate=0.0001),
+                  loss={'peeling_output': 'categorical_crossentropy',
+                        'contamination_output': 'categorical_crossentropy',
+                        'density_output': 'categorical_crossentropy'},
+                  metrics={'peeling_output': 'accuracy',
+                           'contamination_output': 'accuracy',
+                           'density_output': 'accuracy'})
+
+    # Early stopping to prevent overfitting
+    early_stopping = EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True)
+
+    # Create the data generator with augmentation
+    train_dataset = data_generator_with_augmentation(X, y, extracted_feature_lst, batch_size)
+    steps_per_epoch = len(X) // batch_size
+
+    class_weight = calculate_class_weights(y)
+    # Train the model
+    model.fit(train_dataset, epochs=epochs, steps_per_epoch=steps_per_epoch, 
+             
+              callbacks=[early_stopping], verbose=1)
+
+    return model, scaler  # Return the model and scaler for extracted features
+
+def calculate_class_weights(y):
+    print(y)
+    # Ensure class labels in y are integers (in case they are strings)
+    peeling_scores = y[:, 0].astype(int)  # Cast to int to avoid strings
+    print(peeling_scores[:100])
+    contamination_scores = y[:, 1].astype(int)
+    density_scores = y[:, 2].astype(int)
+
+    # Unique classes for each output
+    unique_peeling_classes = np.unique(peeling_scores)
+    unique_contamination_classes = np.unique(contamination_scores)
+    unique_density_classes = np.unique(density_scores)
+    print(unique_peeling_classes)
+
+    # Calculate class weights for each output
+    peeling_class_weight = compute_class_weight('balanced', classes=unique_peeling_classes, y=peeling_scores)
+    contamination_class_weight = compute_class_weight('balanced', classes=unique_contamination_classes, y=contamination_scores)
+    density_class_weight = compute_class_weight('balanced', classes=unique_density_classes, y=density_scores)
+
+    # Create class weight dictionary ensuring integer keys (not strings)
+    class_weight = {
+        'peeling_output': {int(cls): peeling_class_weight[i] for i, cls in enumerate(unique_peeling_classes)},
+        'contamination_output': {int(cls): contamination_class_weight[i] for i, cls in enumerate(unique_contamination_classes)},
+        'density_output': {int(cls): density_class_weight[i] for i, cls in enumerate(unique_density_classes)},
+    }
+
+    return class_weight
+
+
 
 if __name__ == "__main__":
     # to set
     # rounds = ['round06', 'round09', 'round11']
-    rounds = ['test']
+    rounds = ['round06']
 
     image_dir_lst = [f'train/{round}_images' for round in rounds]
     csv_lst = [f'train/scoring_{round}.csv' for round in rounds]
@@ -207,7 +269,9 @@ if __name__ == "__main__":
         extracted_feature_lst = np.array(extracted_feature_lst)
 
         # Perform training (or cross-validation if needed)
-        model, _ = train_in_batches(X, y, extracted_feature_lst, batch_size=32)
+        model, scaler = train_in_batches(X, y, extracted_feature_lst)
+        # model = train_image_only(X, y)
+        # model = train_on_features_only(extracted_feature_lst, y)
         
         # Save the trained model
         os.makedirs('models', exist_ok=True)
