@@ -12,33 +12,41 @@ from scripts.parse_csv_to_dict import parse_csv_to_dict
 from scripts.link_images_to_scores import link_images_to_scores
 import tensorflow as tf
 from sklearn.model_selection import StratifiedKFold, RandomizedSearchCV
+import joblib
+import json
 
-def extract_image_features(X):
+def extract_image_features(X, batch_size=32):
     base_model = ResNet50(weights='imagenet', include_top=False, pooling='avg', input_shape=(512, 512, 3))
     X = X.astype('float32') / 255.0  # Normalize pixel values to [0, 1]
-    
-    features = base_model.predict(X)
+
+    # Use predict with batch_size to avoid memory issues
+    features = base_model.predict(X, batch_size=batch_size)
     return features
 
-def load_data(image_dir_lst, csv_lst):
+def load_data(image_dir_lst, csv_lst, batch_size=32):
     X, y, extracted_feature_lst = [], [], []
 
     for image_dir, csv_file in zip(image_dir_lst, csv_lst):
-        csv_dict = parse_csv_to_dict(csv_file)  # You may want to replace this function if it's custom
-        X_part, y_part, extracted_feature_lst_part = link_images_to_scores(image_dir, csv_dict) 
+        csv_dict = parse_csv_to_dict(csv_file)
 
-        X.extend(X_part)
-        y.extend(y_part)
-        extracted_feature_lst.extend(extracted_feature_lst_part)
+        # Process and load the images in batches
+        for X_batch, y_batch, features_batch in link_images_to_scores(image_dir, csv_dict, batch_size):
+            X.extend(X_batch)
+            y.extend(y_batch)
+            extracted_feature_lst.extend(features_batch)
 
-        del X_part, y_part, extracted_feature_lst_part
-        gc.collect()
+            # Free memory after processing each batch
+            del X_batch, y_batch, features_batch
+            gc.collect()
 
+    # Convert the accumulated data into numpy arrays
     X = np.array(X).astype('float32')
     y = np.array(y)
     extracted_feature_lst = np.array(extracted_feature_lst)
 
     return X, y, extracted_feature_lst
+
+
 
 def ensure_rgb(X):
     """
@@ -74,7 +82,7 @@ def cross_validate_and_tune_model(X, y, extracted_features, use_image_features, 
     else:
         combined_features = extracted_features
 
-    y -= 1  # Adjust target labels if necessary (assuming 1-based indexing)
+    y -= 1  # Adjust target labels if necessary 
 
     # Standardize the feature set
     best_scaler = None
@@ -187,6 +195,29 @@ def cross_validate_and_tune_model(X, y, extracted_features, use_image_features, 
 
     return best_models['peeling'], best_models['contamination'], best_models['density'], best_scaler
 
+# Ensure the 'models' directory exists
+def ensure_models_folder_exists(directory="models"):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+# Save model parameters to JSON
+def save_model_params_to_json(model, filename, directory="models"):
+    ensure_models_folder_exists(directory)
+    model_params = model.get_params()
+    filepath = os.path.join(directory, filename)
+    with open(filepath, 'w') as json_file:
+        json.dump(model_params, json_file)
+
+# Save the full XGBClassifier model to a JSON-compatible format
+def save_full_model_to_json(model, filename, directory="models"):
+    ensure_models_folder_exists(directory)
+    filepath = os.path.join(directory, filename)
+    model.save_model(filepath)
+
+def save_scaler(scaler, filename, directory="models"):
+    ensure_models_folder_exists(directory)
+    filepath = os.path.join(directory, filename)
+    joblib.dump(scaler, filepath)
 
 if __name__ == "__main__":
     # Load the dataset
@@ -217,6 +248,15 @@ if __name__ == "__main__":
 
         #peeling_model, contamination_model, density_model, scaler = train_xgboost(X_rgb, y, extracted_feature_lst, True)
         peeling_model, contamination_model, density_model, scaler = cross_validate_and_tune_model(X_rgb_filtered, y_filtered, extracted_feature_lst_filtered, True)
+
+        save_model_params_to_json(peeling_model, "peeling_model_params.json")
+        save_model_params_to_json(contamination_model, "contamination_model_params.json")
+        save_model_params_to_json(density_model, "density_model_params.json")
+
+        save_full_model_to_json(peeling_model, "peeling_model.json")
+        save_full_model_to_json(contamination_model, "contamination_model.json")
+        save_full_model_to_json(density_model, "density_model.json")
+        save_scaler(scaler, "scaler.pkl")
     else:
         X, y, extracted_feature_lst = load_data(image_dir_lst, csv_lst)
         #peeling_model, contamination_model, density_model, scaler = train_xgboost(ensure_rgb(X), y, extracted_feature_lst, True)
@@ -232,3 +272,12 @@ if __name__ == "__main__":
 
         #peeling_model, contamination_model, density_model, scaler = train_xgboost(X_rgb, y, extracted_feature_lst, True)
         peeling_model, contamination_model, density_model, scaler = cross_validate_and_tune_model(X_rgb_filtered, y_filtered, extracted_feature_lst_filtered, True)
+
+        save_model_params_to_json(peeling_model, "peeling_model_params.json")
+        save_model_params_to_json(contamination_model, "contamination_model_params.json")
+        save_model_params_to_json(density_model, "density_model_params.json")
+
+        save_full_model_to_json(peeling_model, "peeling_model.json")
+        save_full_model_to_json(contamination_model, "contamination_model.json")
+        save_full_model_to_json(density_model, "density_model.json")
+        save_scaler(scaler, "scaler.pkl")
