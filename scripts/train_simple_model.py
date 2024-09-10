@@ -221,7 +221,7 @@ def save_scaler(scaler, filename, directory="models"):
 
 if __name__ == "__main__":
     # Load the dataset
-    rounds = ['round06']  # Example round names
+    rounds = ['round11']  
 
     image_dir_lst = [f'train/{round}_images' for round in rounds]
     csv_lst = [f'train/scoring_{round}.csv' for round in rounds]
@@ -249,14 +249,14 @@ if __name__ == "__main__":
         #peeling_model, contamination_model, density_model, scaler = train_xgboost(X_rgb, y, extracted_feature_lst, True)
         peeling_model, contamination_model, density_model, scaler = cross_validate_and_tune_model(X_rgb_filtered, y_filtered, extracted_feature_lst_filtered, True)
 
-        save_model_params_to_json(peeling_model, "peeling_model_params.json")
-        save_model_params_to_json(contamination_model, "contamination_model_params.json")
-        save_model_params_to_json(density_model, "density_model_params.json")
+        # save_model_params_to_json(peeling_model, "peeling_model_params.json")
+        # save_model_params_to_json(contamination_model, "contamination_model_params.json")
+        # save_model_params_to_json(density_model, "density_model_params.json")
 
-        save_full_model_to_json(peeling_model, "peeling_model.json")
-        save_full_model_to_json(contamination_model, "contamination_model.json")
-        save_full_model_to_json(density_model, "density_model.json")
-        save_scaler(scaler, "scaler.pkl")
+        save_full_model_to_json(peeling_model, "peeling_model2.json")
+        save_full_model_to_json(contamination_model, "contamination_model2.json")
+        save_full_model_to_json(density_model, "density_model2.json")
+        save_scaler(scaler, "scaler2.pkl")
     else:
         X, y, extracted_feature_lst = load_data(image_dir_lst, csv_lst)
         #peeling_model, contamination_model, density_model, scaler = train_xgboost(ensure_rgb(X), y, extracted_feature_lst, True)
@@ -273,11 +273,11 @@ if __name__ == "__main__":
         #peeling_model, contamination_model, density_model, scaler = train_xgboost(X_rgb, y, extracted_feature_lst, True)
         peeling_model, contamination_model, density_model, scaler = cross_validate_and_tune_model(X_rgb_filtered, y_filtered, extracted_feature_lst_filtered, True)
 
-        save_model_params_to_json(peeling_model, "peeling_model_params.json")
-        save_model_params_to_json(contamination_model, "contamination_model_params.json")
-        save_model_params_to_json(density_model, "density_model_params.json")
+        # save_model_params_to_json(peeling_model, "peeling_model_params.json")
+        # save_model_params_to_json(contamination_model, "contamination_model_params.json")
+        # save_model_params_to_json(density_model, "density_model_params.json")
 
-        save_full_model_to_json(peeling_model, "peeling_model.json")
-        save_full_model_to_json(contamination_model, "contamination_model.json")
-        save_full_model_to_json(density_model, "density_model.json")
-        save_scaler(scaler, "scaler.pkl")
+        save_full_model_to_json(peeling_model, "peeling_model2.json")
+        save_full_model_to_json(contamination_model, "contamination_model2.json")
+        save_full_model_to_json(density_model, "density_model2.json")
+        save_scaler(scaler, "scaler2.pkl")

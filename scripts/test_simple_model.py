@@ -54,7 +54,7 @@ def ensure_rgb(X):
     
     return X
 
-def test_xgboost(image_dir_lst, peeling_model_path, contamination_model_path, density_model_path, scaler_path, output_csv='xgb_predictions.csv', batch_size=32):
+def test_xgboost(image_dir_lst, peeling_model_path, contamination_model_path, density_model_path, scaler_path, output_csv, batch_size=32):
     """
     Loads pre-trained models, extracts features from the images in batches, makes predictions, and saves them to a CSV file.
     """
@@ -109,20 +109,24 @@ def test_xgboost(image_dir_lst, peeling_model_path, contamination_model_path, de
     else:
         print("No results to save.")
 
+
 if __name__ == "__main__":
     # Define the image directories and CSV files to load
-    rounds = ['round06']  # Example round names
-    image_dir_lst = [f'train/{round}_images' for round in rounds]  # Replace 'test' with the test image directories
+
+    rounds = ['round02']  
+    image_dir_lst = [f'test/{round}_images' for round in rounds] 
+
     
     # Define paths to the pre-trained models and scaler
-    peeling_model_path = 'models/peeling_model.json'
-    contamination_model_path = 'models/contamination_model.json'
-    density_model_path = 'models/density_model.json'
-    scaler_path = 'models/scaler.pkl'
+    peeling_model_path = 'models/peeling_model2.json'
+    contamination_model_path = 'models/contamination_model2.json'
+    density_model_path = 'models/density_model2.json'
+    scaler_path = 'models/scaler2.pkl'
+
+    output_csv = f'xgb_predictions_{rounds[0]}.csv'
+
+
 
     # Run the test function and save predictions to CSV
-    test_xgboost(image_dir_lst, peeling_model_path, contamination_model_path, density_model_path, scaler_path)
-
-
-
+    test_xgboost(image_dir_lst, peeling_model_path, contamination_model_path, density_model_path, scaler_path, output_csv)
 
