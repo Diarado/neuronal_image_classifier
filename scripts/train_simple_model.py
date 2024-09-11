@@ -102,8 +102,8 @@ def cross_validate_and_tune_model(X, y, extracted_features, use_image_features, 
         'density': 0
     }
 
-    # random_states = [123, 456, 789, 66]
-    random_states = [76]
+    random_states = [123, 456, 789, 66]
+    # random_states = [76]
     
     for state in random_states:
         print(f"Tuning hyperparameters with random_state={state}...")
@@ -259,6 +259,9 @@ if __name__ == "__main__":
         save_scaler(scaler, "scaler2.pkl")
     else:
         X, y, extracted_feature_lst = load_data(image_dir_lst, csv_lst)
+        np.save(X_path, X)
+        np.save(y_path, y)
+        np.save(features_path, extracted_feature_lst)
         #peeling_model, contamination_model, density_model, scaler = train_xgboost(ensure_rgb(X), y, extracted_feature_lst, True)
         X_rgb = ensure_rgb(X)
         
@@ -269,6 +272,8 @@ if __name__ == "__main__":
         X_rgb_filtered = X_rgb[filtered_indices]
         y_filtered = y[filtered_indices]
         extracted_feature_lst_filtered = extracted_feature_lst[filtered_indices]
+
+
 
         #peeling_model, contamination_model, density_model, scaler = train_xgboost(X_rgb, y, extracted_feature_lst, True)
         peeling_model, contamination_model, density_model, scaler = cross_validate_and_tune_model(X_rgb_filtered, y_filtered, extracted_feature_lst_filtered, True)
@@ -281,3 +286,5 @@ if __name__ == "__main__":
         save_full_model_to_json(contamination_model, "contamination_model2.json")
         save_full_model_to_json(density_model, "density_model2.json")
         save_scaler(scaler, "scaler2.pkl")
+
+        

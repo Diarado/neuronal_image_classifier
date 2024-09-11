@@ -41,4 +41,4 @@ def reformat_csv(output_csv):
     output_file = f'reformatted_data_{round_name}.csv'
     reformatted_df.to_csv(output_file, index=False)
 
-reformat_csv('xgb_predictions_round05.csv')
+reformat_csv('xgb_predictions_round02.csv')

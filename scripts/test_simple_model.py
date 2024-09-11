@@ -113,7 +113,7 @@ def test_xgboost(image_dir_lst, peeling_model_path, contamination_model_path, de
 if __name__ == "__main__":
     # Define the image directories and CSV files to load
 
-    rounds = ['round02']  
+    rounds = ['round03']  
     image_dir_lst = [f'test/{round}_images' for round in rounds] 
 
     
