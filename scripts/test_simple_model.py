@@ -113,15 +113,15 @@ def test_xgboost(image_dir_lst, peeling_model_path, contamination_model_path, de
 if __name__ == "__main__":
     # Define the image directories and CSV files to load
 
-    rounds = ['round03']  
+    rounds = ['round10']  
     image_dir_lst = [f'test/{round}_images' for round in rounds] 
 
     
     # Define paths to the pre-trained models and scaler
-    peeling_model_path = 'models/peeling_model2.json'
-    contamination_model_path = 'models/contamination_model2.json'
-    density_model_path = 'models/density_model2.json'
-    scaler_path = 'models/scaler2.pkl'
+    peeling_model_path = 'models/peeling_model3.json'
+    contamination_model_path = 'models/contamination_model3.json'
+    density_model_path = 'models/density_model3.json'
+    scaler_path = 'models/scaler3.pkl'
 
     output_csv = f'xgb_predictions_{rounds[0]}.csv'
 
