@@ -79,7 +79,7 @@ def preprocess_image(image_path, target_size=(512, 512)):
         thresh_adj = -200 if round_num == 1 else 500
         dim_thresh = thresh-22000
         if round_num == 8:
-            black_threshold = 1500
+            black_threshold = 1200 # or even lower
     else: # round 9 and 10
         binary_image = resized_image > thresh - 9000 # TODO
         thresh_adj = 500
