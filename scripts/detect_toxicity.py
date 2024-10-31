@@ -13,27 +13,10 @@ import pandas as pd
 import re
 
 def detect_toxicity(image_path, target_size=(512, 512)):
-    """
-    Preprocess the image, label regions, and count cell density.
-    
-    Parameters:
-    - image_path (str): The file path to the image.
-    - target_size (tuple): The target size for resizing the image.
-    - black_threshold (float): The threshold below which the image is considered mostly black.
-    
-    Returns:
-    - labeled_image (numpy array): The processed image with labeled regions.
-    - is_dead (bool): True if the image is mostly black, indicating a dead cell.
-    - cell_density (int): The count of desired neuron cells.
-    """
-
     match = re.search(r'round(\d+)', image_path)
     round_num = 6
     if match:
         round_num = int(match.group(1))
-
-    # print('round: ' + str(round_num))
-    # Load the image
     image = io.imread(image_path)
     
     if len(image.shape) == 3 and image.shape[2] == 3:
@@ -46,9 +29,10 @@ def detect_toxicity(image_path, target_size=(512, 512)):
     resized_image = transform.resize(downsampled_image, target_size, anti_aliasing=True)
 
     mean_intensity = np.mean(resized_image)
+    total_intensity = np.sum(resized_image)
     print("image_path: ", image_path)
     print("Mean intensity of the image:", mean_intensity)
-    
+    print("Total intensity of the image:", total_intensity)
 
     # Plot a histogram of the intensity values
     hist, bins = np.histogram(resized_image.ravel(), bins=256)
@@ -152,21 +136,9 @@ def detect_toxicity(image_path, target_size=(512, 512)):
     beta = 100   # Weight for the count
     cell_density = (alpha * good_cell_pixels + beta * good_cell_cnt)
    
-    # Debug: Check if the labeling is working
-    print(f"Number of pixels labeled as Peeling (3): {np.sum(labeled_image == 3)}")
-    print(f"Number of pixels labeled as Desired neuron cells (2): {np.sum(labeled_image == 2)}")
-    print(f"Number of pixels labeled as Contamination (1): {np.sum(labeled_image == 1)}")
-    print(f"Number of pixels labeled as Background (0): {np.sum(labeled_image == 0)}")
-    print(f"good_cell_pixels: {(good_cell_pixels)}")
     print(f"good_cell_cnt: {(good_cell_cnt)}")
     print(f"density: {(cell_density)}")
-
-    peeling_degree = 3 # can be 1,2,3
-    if np.sum(labeled_image == 3) > 10000:
-        peeling_degree = 1
-    elif 5000 < np.sum(labeled_image == 3) <= 10000:
-        peeling_degree = 2
-
+    
     # Save memory     
     del gray_image, downsampled_image
     gc.collect()
@@ -182,12 +154,7 @@ def detect_toxicity(image_path, target_size=(512, 512)):
     # plt.savefig(save_path, bbox_inches='tight')
     # plt.clf()
 
-    contamination_degree = bad_cell_cnt
-    # add contamination, only depend on numbers
-    extracted_features = [int(is_dead), peeling_degree, contamination_degree, cell_density]
-
-    return resized_image, extracted_features
-
+    return good_cell_cnt, total_intensity
 
 
 def _hasAxon(region) -> bool:
@@ -255,3 +222,76 @@ def _isFilled(region) -> bool:
     is_filled_region = (extent > extent_threshold) and (solidity > solidity_threshold)
     
     return is_filled_region
+
+if __name__ == "__main__":
+    import os
+    import pandas as pd  # Ensure pandas is imported as pd
+    import gc
+
+    rounds = ['round10']  
+    pre_image_dir_lst = [f'test/{round}_pre_images' for round in rounds]
+    post_image_dir_lst = [f'test/{round}_images' for round in rounds] 
+    
+    # Define the output CSV file
+    output_csv = f'toxicity_{rounds[0]}.csv'
+    
+    # Initialize a list to store results
+    res = []
+    
+    # Iterate over paired pre and post image directories
+    for pre_image_dir, post_image_dir in zip(pre_image_dir_lst, post_image_dir_lst):
+        # Walk through the pre_image_dir
+        for root, dirs, files in os.walk(pre_image_dir):
+            for file in files:
+                if file.endswith('.tif'):
+                    pre_image_path = os.path.join(root, file)
+
+                    # Extract useful information from the file name
+                    try:
+                        info = file.split('_')[-1]  # e.g., H07fld04.tif
+                        plate_num = info.split('fld')[0]  # e.g., H07
+                        fld_num_str = info.split('fld')[-1]  # e.g., 04.tif
+                        fld_num = int(fld_num_str.split('.')[0]) - 1  # Convert to zero-indexed
+                    except (IndexError, ValueError) as e:
+                        print(f"Filename parsing error for {file}: {e}")
+                        continue  # Skip files that don't match the expected pattern
+
+                    rep_folder = os.path.basename(root)  # e.g., rep1
+                    plate_info = f"{rep_folder}_{plate_num}"  # e.g., rep1_H07
+                        
+                    # Detect toxicity for pre image
+                    pre_num_neuron, pre_total_intensity = detect_toxicity(pre_image_path)
+                    
+                    # Construct the corresponding post image path
+                    post_image_path = os.path.join(post_image_dir, file)
+                    
+                    # Check if the post image exists
+                    if os.path.exists(post_image_path):
+                        post_num_neuron, post_total_intensity = detect_toxicity(post_image_path)
+                    else:
+                        print(f"Post image not found for {pre_image_path}. Skipping this pair.")
+                        continue  # Skip to the next file if post image is missing
+                    
+                    # Create a unique image name based on plate information and field number
+                    image_name = f'{plate_info}_fld{fld_num}'
+                    
+                    # Initialize the row with default values
+                    row = {'Image': image_name, 'Killed': False}
+                    
+                    # Determine if the well is killed based on the defined criteria
+                    if (pre_num_neuron / 2 > post_num_neuron) or (pre_total_intensity / 2 > post_total_intensity):
+                        row['Killed'] = True  # Mark as killed if criteria are met
+    
+                    # Append the result to the list
+                    res.append(row)
+                    
+                    # Optional: Free up memory if processing large datasets
+                    gc.collect()
+    
+    # Create a DataFrame from the results
+    df = pd.DataFrame(res, columns=['Image', 'Killed'])
+    
+    # Save the DataFrame to a CSV file
+    df.to_csv(output_csv, index=False)
+    
+    print(f"Processing complete. Results saved to {output_csv}.")
