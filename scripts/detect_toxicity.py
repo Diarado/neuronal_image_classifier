@@ -10,7 +10,7 @@ import gc
 from skimage import io, color, transform
 import os
 import pandas as pd
-import re
+import glob
 
 def detect_toxicity(image_path, target_size=(512, 512)):
     image = io.imread(image_path)
@@ -33,7 +33,7 @@ def detect_toxicity(image_path, target_size=(512, 512)):
     # Compute a robust brightness metric as a combination of the above
     # combined_brightness = (mean_intensity + median_intensity + weighted_avg_intensity) / 3
 
-    # print("image_path: ", image_path)
+    print("image_path: ", image_path)
     # print("Mean intensity:", mean_intensity)
     # print("Median intensity:", median_intensity)
     print("Weighted average intensity:", weighted_avg_intensity)
@@ -231,74 +231,88 @@ if __name__ == "__main__":
     import pandas as pd  # Ensure pandas is imported as pd
     import gc
 
-    rounds = ['round10', 'round11']  
+    rounds = ['round02', 'round03', 'round04', 'round05', 'round06', 'round07', 'round08', 'round09', 'round10', 'round11', 'round12']  
     pre_image_dir_lst = [f'test/{round}_pre_images' for round in rounds]
     post_image_dir_lst = [f'test/{round}_images' for round in rounds] 
     
-    # Define the output CSV file
-    output_csv = f'toxicity_{rounds[0]}.csv'
-    
-    # Initialize a list to store results
-    res = []
-    
-    # Iterate over paired pre and post image directories
-    for pre_image_dir, post_image_dir in zip(pre_image_dir_lst, post_image_dir_lst):
-        # Walk through the pre_image_dir
-        for root, dirs, files in os.walk(pre_image_dir):
-            for file in files:
-                if file.endswith('.tif'):
-                    pre_image_path = os.path.join(root, file)
+    for round in rounds:
+        # Define the output CSV file
+        output_csv = f'toxicity_{round}.csv'
+        
+        # Initialize a list to store results
+        res = []
+        
+        # Iterate over paired pre and post image directories
+        for pre_image_dir, post_image_dir in zip(pre_image_dir_lst, post_image_dir_lst):
+            # Walk through the pre_image_dir
+            for root, dirs, files in os.walk(pre_image_dir):
+                for file in files:
+                    if file.endswith('.tif'):
+                        pre_image_path = os.path.join(root, file)
 
-                    # Extract useful information from the file name
-                    try:
-                        info = file.split('_')[-1]  # e.g., H07fld04.tif
-                        plate_num = info.split('fld')[0]  # e.g., H07
-                        fld_num_str = info.split('fld')[-1]  # e.g., 04.tif
-                        fld_num = int(fld_num_str.split('.')[0])
-                    except (IndexError, ValueError) as e:
-                        print(f"Filename parsing error for {file}: {e}")
-                        continue  # Skip files that don't match the expected pattern
+                        # Extract useful information from the file name
+                        try:
+                            info = file.split('_')[-1]  # e.g., H07fld04.tif
+                            plate_num = info.split('fld')[0]  # e.g., H07
+                            fld_num_str = info.split('fld')[-1]  # e.g., 04.tif
+                            fld_num = int(fld_num_str.split('.')[0]) # e.g., 04
+                        except (IndexError, ValueError) as e:
+                            print(f"Filename parsing error for {file}: {e}")
+                            continue  # Skip files that don't match the expected pattern
 
-                    rep_folder = os.path.basename(root)  # e.g., rep1
-                    plate_info = f"{rep_folder}_{plate_num}"  # e.g., rep1_H07
+                        rep_folder = os.path.basename(root)  # e.g., rep1
+                        plate_info = f"{rep_folder}_{plate_num}"  # e.g., rep1_H07
+                            
+                        # Detect toxicity for pre image
+                        pre_total_intensity = detect_toxicity(pre_image_path)
                         
-                    # Detect toxicity for pre image
-                    pre_total_intensity = detect_toxicity(pre_image_path)
-                    
-                    # Construct the corresponding post image path
-                    post_image_path = pre_image_path.replace('pre_', '').replace('Pre', 'Post')
+                        # Construct the corresponding post image path
+                        post_image_path = ''
+                        if round in ['round11']:
+                            post_image_path = pre_image_path.replace('pre_', '').replace('Pre', 'Post')
+                        else:
+                            search_dir = f"test/{round}_pre_images/rep1/"
+                            matching_files = glob.glob(os.path.join(search_dir, f"*{info}*"))
+              
+                            if matching_files:
+                                # Assuming you take the first match if there are multiple matches
+                                post_image_path = matching_files[0]
+                            else:
+                                print(f"No matching file found for plate_info: {info}")
+                                continue
 
-                    # Check if the post image exists
-                    # TODO
-                    if os.path.exists(post_image_path):
-                        post_total_intensity = detect_toxicity(post_image_path)
-                    else:
-                        print(f"Post image not found for {pre_image_path}. Skipping this pair.")
-                        continue  # Skip to the next file if post image is missing
-                    
-                    # Create a unique image name based on plate information and field number
-                    image_name = f'{plate_info}_fld{fld_num}'
-                    
-                    # Initialize the row with default values
-                    row = {'Image': image_name, 'Killed': False}
-                    
-                    # Determine if the well is killed based on the defined criteria
-                    # if ((pre_num_neuron / 2 > post_num_neuron) or (pre_total_intensity / 2 > post_total_intensity) or 
-                    #     (pre_num_neuron != 0 and post_num_neuron == 0) or 
-                    #     (pre_total_intensity != 0 and post_total_intensity == 0)):
-                    #     row['Killed'] = True  # Mark as killed if criteria are met
-                    if pre_total_intensity * 0.95 > post_total_intensity:
-                        row['Killed'] = True
-                    # Append the result to the list
-                    res.append(row)
-                    
-                    # Optional: Free up memory if processing large datasets
-                    gc.collect()
-    
-    # Create a DataFrame from the results
-    df = pd.DataFrame(res, columns=['Image', 'Killed'])
-    
-    # Save the DataFrame to a CSV file
-    df.to_csv(output_csv, index=False)
-    
-    print(f"Processing complete. Results saved to {output_csv}.")
+                        # print(post_image_path)
+                        # Check if the post image exists
+                        
+                        if os.path.exists(post_image_path):
+                            post_total_intensity = detect_toxicity(post_image_path)
+                        else:
+                            print(f"Post image not found for {pre_image_path}. Skipping this pair.")
+                            continue  # Skip to the next file if post image is missing
+                        
+                        # Create a unique image name based on plate information and field number
+                        image_name = f'{plate_info}_fld{fld_num}'
+                        
+                        # Initialize the row with default values
+                        row = {'Image': image_name, 'Killed': False}
+                        
+                        # Determine if the well is killed based on the defined criteria
+                        # if ((pre_num_neuron / 2 > post_num_neuron) or (pre_total_intensity / 2 > post_total_intensity) or 
+                        #     (pre_num_neuron != 0 and post_num_neuron == 0) or 
+                        #     (pre_total_intensity != 0 and post_total_intensity == 0)):
+                        #     row['Killed'] = True  # Mark as killed if criteria are met
+                        if pre_total_intensity * 0.95 > post_total_intensity:
+                            row['Killed'] = True
+                        # Append the result to the list
+                        res.append(row)
+                        
+                        # Optional: Free up memory if processing large datasets
+                        gc.collect()
+        
+        # Create a DataFrame from the results
+        df = pd.DataFrame(res, columns=['Image', 'Killed'])
+        
+        # Save the DataFrame to a CSV file
+        df.to_csv(output_csv, index=False)
+        
+        print(f"Processing complete. Results saved to {output_csv}.")
